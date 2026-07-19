@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marching Band App - Unified</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; background: #222; color: white; max-width: 800px; margin: 0 auto; }
+    button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border-radius: 8px; border: none; }
+    input[type="file"], input[type="number"], select { padding: 10px; font-size: 16px; margin: 5px; }
+    hr { margin: 40px 0; border: 1px solid #444; }
+    .control-group { background: #333; padding: 15px; border-radius: 8px; margin: 15px 0; }
+    
+    #tapBtn { background-color: #4CAF50; color: white; font-weight: bold; width: 200px; height: 80px; }
+    #startBtn { background-color: #008CBA; color: white; }
+    #saveBtn { background-color: #ff9800; color: white; }
+    #output, #playerOutput { margin-top: 15px; font-family: monospace; background: #111; padding: 10px; border-radius: 5px; max-height: 150px; overflow-y: auto; text-align: left; }
+    
+    #playChunkBtn { background-color: #4CAF50; color: white; font-weight: bold; }
+    #pauseBtn { background-color: #f44336; color: white; }
+    #stopBtn { background-color: #9e9e9e; color: black; }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== TRAINING MODE ==================== -->
+  <h2>Step 1: Training Mode (Beat Mapper)</h2>
+  <div class="control-group">
+    <label>Audio File: <input type="file" id="audioUpload" accept="audio/*"></label><br><br>
+    <audio id="audioPlayer"></audio>
+    <div>
+      <button id="startBtn">1. Play Audio</button>
+      <button id="tapBtn">2. TAP (Spacebar)</button>
+    </div>
+    <div>
+      <button id="saveBtn">3. Save Taps Data</button>
+    </div>
+    <div id="output">Timestamps will appear here...</div>
+  </div>
+
+  <hr>
+
+  <!-- ==================== REHEARSAL MODE ==================== -->
+  <h2>Step 2: Rehearsal Mode</h2>
+  
+  <div class="control-group">
+    <label>Load Beats JSON: <input type="file" id="jsonUpload" accept=".json"></label>
+  </div>
+
+  <div class="control-group">
+    <button id="loadMasterDataBtn">Load Master Show Data (map.csv)</button>
+    <span id="dataStatus">Waiting for CSV...</span>
+  </div>
+  
+  <div class="control-group">
+    Tune: <select id="tuneSelect"><option value="">-- Load CSV First --</option></select>
+  </div>
+  
+  <div class="control-group">
+    Start Chunk: <select id="startChunk"><option value="">-- Select Tune First --</option></select>
+    &nbsp;&nbsp;
+    End Chunk: <select id="endChunk"><option value="">-- Select Tune First --</option></select>
+  </div>
+
+  <div class="control-group">
+    <label>Music Vol: <input type="range" id="musicVolume" min="0" max="1" step="0.1" value="0.8"></label>
+    <label>Met Vol: <input type="range" id="metVolume" min="0" max="1" step="0.1" value="1.0"></label>
+    <label><input type="checkbox" id="playMetToggle" checked> Metronome On</label>
+  </div>
+
+  <div>
+    <button id="playChunkBtn">Play Selection</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="stopBtn">Stop / Reset</button>
+  </div>
+  <div id="playerOutput">Awaiting audio upload (Step 1) and JSON upload...</div>
+
+  <script>
+    // --- MAPPER VARIABLES ---
+    const audioUpload = document.getElementById('audioUpload');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const startBtn = document.getElementById('startBtn');
+    const tapBtn = document.getElementById('tapBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const output = document.getElementById('output');
+    let timestamps = [];
+    let audioBaseName = "tune"; 
+
+    // --- REHEARSAL UI VARIABLES ---
+    const jsonUpload = document.getElementById('jsonUpload');
+    const playChunkBtn = document.getElementById('playChunkBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const playerOutput = document.getElementById('playerOutput');
+    const musicVolume = document.getElementById('musicVolume');
+    const metVolume = document.getElementById('metVolume');
+    const playMetToggle = document.getElementById('playMetToggle');
+
+    // --- DROPDOWN VARIABLES ---
+    const loadMasterDataBtn = document.getElementById('loadMasterDataBtn');
+    const dataStatus = document.getElementById('dataStatus');
+    const tuneSelect = document.getElementById('tuneSelect');
+    const startChunkSelect = document.getElementById('startChunk');
+    const endChunkSelect = document.getElementById('endChunk');
+    let masterChunks = [];
+
+    // --- WEB AUDIO ENGINE VARIABLES ---
+    let loadedTimestamps = [];
+    let stopTime = null; 
+    let scheduledOscillators = []; 
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let musicBuffer = null;
+    let musicSource = null;
+    let musicGainNode = null;
+
+    // Volume listener (Updates both HTML audio and Web Audio)
+    musicVolume.addEventListener('input', (e) => {
+      audioPlayer.volume = e.target.value; 
+      if (musicGainNode) {
+        musicGainNode.gain.value = e.target.value; 
+      }
+    });
+
+    function stopAllAudio() {
+      scheduledOscillators.forEach(osc => {
+        try { osc.stop(); } catch(e) {}
+      });
+      scheduledOscillators = [];
+      
+      if (musicSource) {
+        try { musicSource.stop(); } catch(e) {}
+        musicSource = null;
+      }
+    }
+
+    // ==========================================
+    // 1. MAPPER & DECODER LOGIC
+    // ==========================================
+    audioUpload.addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      audioBaseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      
+      audioPlayer.src = URL.createObjectURL(file);
+
+      playerOutput.innerHTML = "Decoding high-precision audio into RAM... Please wait.";
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        musicBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        playerOutput.innerHTML = "Audio decoded! Ready for perfectly synced Rehearsal Mode.";
+      } catch (err) {
+        playerOutput.innerHTML = "Error decoding audio: " + err;
+      }
+    });
+
+    startBtn.addEventListener('click', () => {
+      timestamps = []; 
+      output.innerHTML = "Recording taps...<br>";
+      audioPlayer.play();
+    });
+
+    function recordTap() {
+      if(audioPlayer.paused) return; 
+      const currentTime = audioPlayer.currentTime.toFixed(3); 
+      timestamps.push(currentTime);
+      output.innerHTML += `Beat ${timestamps.length}: ${currentTime}s<br>`;
+      output.scrollTop = output.scrollHeight; 
+    }
+
+    tapBtn.addEventListener('click', recordTap);
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'SELECT') {
+        e.preventDefault();
+        recordTap();
+      }
+    });
+
+    saveBtn.addEventListener('click', () => {
+      if (timestamps.length === 0) return alert("No taps to save yet!");
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(timestamps));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", `${audioBaseName}_beats.json`);
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    });
+
+    // ==========================================
+    // 2. CSV PARSING & CASCADING DROPDOWNS
+    // ==========================================
+    loadMasterDataBtn.addEventListener('click', async () => {
+      try {
+        dataStatus.textContent = "Loading...";
+        const response = await fetch('map.csv');
+        if (!response.ok) throw new Error("File not found");
+        
+        const csvText = await response.text();
+        parseCSV(csvText);
+        populateTuneDropdown();
+        
+        dataStatus.textContent = `Loaded ${masterChunks.length} chunks.`;
+      } catch (error) {
+        console.error("Error loading CSV:", error);
+        dataStatus.textContent = "Error: Could not load map.csv.";
+      }
+    });
+
+    function parseCSV(text) {
+      masterChunks = [];
+      const lines = text.split('\n');
+
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+
+        const row = lines[i].split(',');
+        const chunk = {
+          tune: row[0] ? row[0].trim() : "",
+          set: row[1] ? row[1].trim() : "",
+          measure: row[2] ? row[2].trim() : "",
+          startBeat: parseInt(row[3].trim()),
+          counts: parseInt(row[4].trim()),
+          drillPage: row[5] ? row[5].trim() : "",
+          musicPage: row[6] ? row[6].trim() : "",
+          label: row[7] ? row[7].trim() : ""
+        };
+
+        if (chunk.tune && !isNaN(chunk.startBeat)) {
+          masterChunks.push(chunk);
+        }
+      }
+    }
+
+    function populateTuneDropdown() {
+      tuneSelect.innerHTML = '<option value="">-- Select a Tune --</option>';
+      const uniqueTunes = [...new Set(masterChunks.map(c => c.tune))];
+      
+      uniqueTunes.forEach(tune => {
+        tuneSelect.insertAdjacentHTML('beforeend', `<option value="${tune}">${tune}</option>`);
+      });
+
+      startChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
+      endChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
+    }
+
+    tuneSelect.addEventListener('change', (e) => {
+      populateChunkDropdowns(e.target.value);
+    });
+
+    function populateChunkDropdowns(selectedTune) {
+      startChunkSelect.innerHTML = '';
+      endChunkSelect.innerHTML = '';
+
+      if (!selectedTune) {
+        startChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
+        endChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
+        return;
+      }
+
+      const filteredChunks = masterChunks.filter(c => c.tune === selectedTune);
+
+      filteredChunks.forEach(chunk => {
+        let nameParts = [];
+        if (chunk.label) nameParts.push(chunk.label);
+        if (chunk.set) nameParts.push(`Set ${chunk.set}`);
+        if (chunk.measure) nameParts.push(`Meas ${chunk.measure}`);
+
+        let displayName = nameParts.length > 0 ? nameParts.join(" | ") : `Beat ${chunk.startBeat}`;
+
+        const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}">${displayName} (${chunk.counts} cts)</option>`;
+
+        startChunkSelect.insertAdjacentHTML('beforeend', optionString);
+        endChunkSelect.insertAdjacentHTML('beforeend', optionString);
+      });
+    }
+
+    // ==========================================
+    // 3. AUDIO PLAYER LOGIC
+    // ==========================================
+    jsonUpload.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        loadedTimestamps = JSON.parse(event.target.result);
+        if(musicBuffer) {
+           playerOutput.innerHTML = `Loaded JSON: <b>${loadedTimestamps.length} total beats found.</b>`;
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    function scheduleBeep(time, isHighPitch) {
+      let osc = audioCtx.createOscillator();
+      let gainNode = audioCtx.createGain();
+      
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      osc.type = 'sine';
+      osc.frequency.value = isHighPitch ? 880 : 440; 
+      
+      let currentMetVol = parseFloat(metVolume.value);
+      gainNode.gain.setValueAtTime(currentMetVol, time);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+      
+      osc.start(time);
+      osc.stop(time + 0.1);
+      scheduledOscillators.push(osc);
+    }
+
+    playChunkBtn.addEventListener('click', () => {
+      if(!startChunkSelect.value || !endChunkSelect.value) return alert("Select a start and end chunk.");
+      if(loadedTimestamps.length === 0) return alert("Upload your beats JSON file first!");
+      if(!musicBuffer) return alert("Upload your audio file in Step 1 first!");
+      
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      stopAllAudio(); 
+      
+      // Calculate indices from dropdown values and data attributes
+      const startIdx = parseInt(startChunkSelect.value) - 1;
+      
+      // To get the true end index, we add the duration (counts) of the selected End Chunk
+      const endOption = endChunkSelect.options[endChunkSelect.selectedIndex];
+      const endChunkCounts = parseInt(endOption.getAttribute('data-counts'));
+      const endIdx = (parseInt(endChunkSelect.value) - 1) + endChunkCounts;
+      
+      if(startIdx < 0 || endIdx >= loadedTimestamps.length || startIdx >= endIdx) {
+        return alert("Invalid beat range. Does your JSON file have enough beats mapped?");
+      }
+
+      const startTime = parseFloat(loadedTimestamps[startIdx]);
+      stopTime = parseFloat(loadedTimestamps[endIdx]);
+
+      // Calculate tempo for count-off
+      let totalTimeDiff = 0;
+      let beatsToAverage = Math.min(4, loadedTimestamps.length - startIdx - 1);
+      for(let i = 0; i < beatsToAverage; i++) {
+        totalTimeDiff += (parseFloat(loadedTimestamps[startIdx + i + 1]) - parseFloat(loadedTimestamps[startIdx + i]));
+      }
+      let beatDuration = totalTimeDiff / beatsToAverage || 0.5; 
+      
+      let now = audioCtx.currentTime;
+      
+      // Schedule 8-count prep metronome
+      for (let i = 0; i < 8; i++) {
+        let clickTime = now + (i * beatDuration);
+        let isHigh = (i === 0 || i === 4);
+        scheduleBeep(clickTime, isHigh);
+      }
+
+      // Schedule in-music metronome (if toggled)
+      if (playMetToggle.checked) {
+        for (let i = startIdx; i <= endIdx; i++) {
+          let timeOffsetFromStart = parseFloat(loadedTimestamps[i]) - startTime;
+          let clickTime = now + (8 * beatDuration) + timeOffsetFromStart;
+          
+          let relativeBeat = i - startIdx;
+          let isHigh = (relativeBeat % 2 === 0);
+          scheduleBeep(clickTime, isHigh);
+        }
+      }
+
+      // Schedule the music
+      let downbeatTime = now + (8 * beatDuration);
+      let chunkDuration = stopTime - startTime;
+
+      musicSource = audioCtx.createBufferSource();
+      musicSource.buffer = musicBuffer;
+      
+      musicGainNode = audioCtx.createGain();
+      musicGainNode.gain.value = parseFloat(musicVolume.value);
+      
+      musicSource.connect(musicGainNode);
+      musicGainNode.connect(audioCtx.destination);
+      
+      musicSource.start(downbeatTime, startTime, chunkDuration);
+
+      playerOutput.innerHTML = `Playing Chunk...<br>Start: Beat ${startIdx + 1} | End: Beat ${endIdx + 1}<br>Perfect sync engaged.`;
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      stopAllAudio();
+      audioPlayer.pause(); 
+      playerOutput.innerHTML = "Paused/Stopped.";
+    });
+
+    stopBtn.addEventListener('click', () => {
+      stopAllAudio();
+      audioPlayer.pause();
+      playerOutput.innerHTML = "Reset ready for next rep.";
+    });
+  </script>
+</body>
+</html>
