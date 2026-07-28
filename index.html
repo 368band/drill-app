@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- Removed user-scalable=no to allow pinch-to-zoom on iPad -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Marching Band App - Rehearsal Mode</title>
   <style>
-    /* --- STAGE 1: LOCKED SPLIT-SCREEN LAYOUT --- */
+    /* --- STAGE 1 & 2: LAYOUT --- */
     body, html { 
       margin: 0; padding: 0; height: 100dvh; width: 100vw; 
-      overflow: hidden; /* Locks screen from accidental scrolling */
+      overflow: hidden; 
       background-color: #121212; color: white; 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
     }
@@ -18,8 +19,9 @@
     /* Viewer Section */
     .viewer-section {
       flex-grow: 1; position: relative; background-color: #000;
-      display: flex; justify-content: center; align-items: center; overflow: hidden;
-      touch-action: pan-y; /* Prevents browser back-navigation on horizontal swipes */
+      display: flex; justify-content: center; align-items: center; overflow: auto;
+      /* Allows native touch interactions on the image */
+      touch-action: pan-x pan-y pinch-zoom; 
     }
     #display-image { max-width: 100%; max-height: 100%; object-fit: contain; }
     
@@ -57,9 +59,14 @@
     
     /* Utilities */
     .status-text { font-size: 14px; color: #aaa; }
-    #playerOutput { font-family: monospace; color: #4CAF50; font-weight: bold; text-align: center; width: 100%; margin-top: 5px;}
+    /* Updated Player Output for Live Tracking */
+    #playerOutput { 
+      font-family: monospace; color: #4CAF50; font-size: 18px; font-weight: bold; 
+      text-align: center; width: 100%; margin-top: 5px; padding: 5px;
+      background: #111; border-radius: 8px;
+    }
     
-    /* Mapper Styles (Kept for instructor tools) */
+    /* Mapper Styles */
     details { background: #111; padding: 15px; border-radius: 8px; margin-top: 10px; text-align: left; }
     summary { font-weight: bold; cursor: pointer; color: #888; }
     #tapBtn { background-color: #4CAF50; color: white; font-weight: bold; width: 100%; height: 60px; margin-top: 10px; }
@@ -71,7 +78,6 @@
 <body>
 
   <div class="app-container">
-
     <!-- ==================== VIEWER SECTION ==================== -->
     <div class="viewer-section" id="viewer-container">
       <img id="display-image" src="" alt="Load a tune to view pages" style="display: none;">
@@ -85,7 +91,6 @@
     <!-- ==================== DASHBOARD SECTION ==================== -->
     <div class="dashboard-section">
       
-      <!-- Row 1: Global Setup -->
       <div class="dashboard-row">
         <button id="loadMasterDataBtn">1. Load Master Data</button>
         <select id="tuneSelect"><option value="">-- Load CSV First --</option></select>
@@ -96,21 +101,20 @@
         <span id="dataStatus" class="status-text">Waiting for CSV...</span>
       </div>
       
-      <!-- Row 2: Chunk Selection -->
       <div class="dashboard-row">
         <label>Start: <select id="startChunk"><option value="">-- Select Tune First --</option></select></label>
         <label>End: <select id="endChunk"><option value="">-- Select Tune First --</option></select></label>
       </div>
 
-      <!-- Row 3: Playback Controls -->
       <div class="dashboard-row">
         <button id="playChunkBtn">▶ Play Selection</button>
         <button id="pauseBtn">Pause</button>
         <button id="stopBtn">■ Stop</button>
       </div>
-      <div id="playerOutput">Awaiting Data...</div>
+      
+      <!-- Live Tracker Display -->
+      <div id="playerOutput">Ready to rehearse.</div>
 
-      <!-- Row 4: Audio Options -->
       <div class="dashboard-row" style="font-size: 14px;">
         <label>Music Vol: <input type="range" id="musicVolume" min="0" max="1" step="0.1" value="0.8" style="width: 80px;"></label>
         <label>Met Vol: <input type="range" id="metVolume" min="0" max="1" step="0.1" value="1.0" style="width: 80px;"></label>
@@ -123,7 +127,7 @@
         </label>
       </div>
 
-      <!-- ==================== TRAINING MODE (HIDDEN) ==================== -->
+      <!-- ==================== TRAINING MODE ==================== -->
       <details>
         <summary>Instructor Tools (Beat Mapper)</summary>
         <div class="control-group">
@@ -137,7 +141,6 @@
           <div id="output">Timestamps will appear here...</div>
         </div>
       </details>
-
     </div>
   </div>
 
@@ -148,21 +151,17 @@
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen');
-          console.log('Screen Wake Lock acquired');
         }
-      } catch (err) {
-        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
-      }
+      } catch (err) { console.error(`Wake Lock error: ${err.message}`); }
     }
     
-    // Re-acquire wake lock if the app was minimized and brought back
     document.addEventListener('visibilitychange', async () => {
       if (wakeLock !== null && document.visibilityState === 'visible') {
         await requestWakeLock();
       }
     });
 
-    // --- STAGE 1 & 2: UI & IMAGE VARIABLES ---
+    // --- VARIABLES ---
     const displayImage = document.getElementById("display-image");
     const btnMusicView = document.getElementById("btn-music-view");
     const btnDrillView = document.getElementById("btn-drill-view");
@@ -170,10 +169,10 @@
     
     let currentMusicPage = "1";
     let currentDrillPage = "1";
-    let activeVisualView = "music"; // 'music' or 'drill'
+    let activeVisualView = "music"; 
     let currentTuneId = "";
 
-    // --- MAPPER VARIABLES ---
+    // Mapper UI
     const audioUpload = document.getElementById('audioUpload');
     const audioPlayer = document.getElementById('audioPlayer');
     const startBtn = document.getElementById('startBtn');
@@ -183,7 +182,7 @@
     let timestamps = [];
     let audioBaseName = "tune"; 
 
-    // --- REHEARSAL UI VARIABLES ---
+    // Rehearsal UI
     const playChunkBtn = document.getElementById('playChunkBtn');
     const pauseBtn = document.getElementById('pauseBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -193,7 +192,6 @@
     const playMetToggle = document.getElementById('playMetToggle');
     const countInSelect = document.getElementById('countInSelect');
 
-    // --- DROPDOWN VARIABLES ---
     const loadMasterDataBtn = document.getElementById('loadMasterDataBtn');
     const dataStatus = document.getElementById('dataStatus');
     const tuneSelect = document.getElementById('tuneSelect');
@@ -201,7 +199,7 @@
     const endChunkSelect = document.getElementById('endChunk');
     let masterChunks = [];
 
-    // --- WEB AUDIO ENGINE VARIABLES ---
+    // Audio Engine
     let loadedTimestamps = [];
     let stopTime = null; 
     let scheduledOscillators = []; 
@@ -210,7 +208,13 @@
     let musicSource = null;
     let musicGainNode = null;
 
-    // Volume listener
+    // --- STAGE 3: LIVE TRACKER VARIABLES ---
+    let playbackAnimationId = null;
+    let playbackActualStartTime = 0; 
+    let playbackStartAudioTime = 0;
+    let globalStartIdx = 0;
+    let globalEndIdx = 0;
+
     musicVolume.addEventListener('input', (e) => {
       audioPlayer.volume = e.target.value; 
       if (musicGainNode) musicGainNode.gain.value = e.target.value; 
@@ -220,16 +224,16 @@
       scheduledOscillators.forEach(osc => { try { osc.stop(); } catch(e) {} });
       scheduledOscillators = [];
       if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
+      cancelAnimationFrame(playbackAnimationId); // Stop the visual tracker
     }
 
-   // ==========================================
-    // STAGE 1: IMAGE VIEW TOGGLE LOGIC
+    // ==========================================
+    // IMAGE VIEW & MODE TOGGLE LOGIC
     // ==========================================
     function updateImageView() {
       if (!currentTuneId) return;
-      displayImage.style.display = "block"; // Unhide if it's the first load
+      displayImage.style.display = "block";
       
-      // Force page numbers to be at least two digits (e.g., 1 becomes "01")
       let mPageFormatted = String(currentMusicPage).padStart(2, '0');
       let dPageFormatted = String(currentDrillPage).padStart(2, '0');
       
@@ -254,63 +258,60 @@
       updateImageView();
     });
 
+    // --- MODIFIED: Captures current beat before switching modes ---
     rehearsalMode.addEventListener("change", () => {
+      let prevStartBeat = startChunkSelect.value ? parseInt(startChunkSelect.value) : null;
+      let prevEndBeat = endChunkSelect.value ? parseInt(endChunkSelect.value) : null;
+
       if (rehearsalMode.value === "drill") {
         btnDrillView.click(); 
       } else {
         btnMusicView.click();
       }
-      populateChunkDropdowns(currentTuneId);
+      
+      populateChunkDropdowns(currentTuneId, prevStartBeat, prevEndBeat);
     });
 
     // ==========================================
-    // STAGE 2: SWIPE-TO-TURN GESTURE LOGIC
+    // SWIPE GESTURES
     // ==========================================
     const viewerContainer = document.getElementById('viewer-container');
-    let touchStartX = 0;
-    let touchEndX = 0;
+    let touchStartX = 0; let touchEndX = 0;
 
     viewerContainer.addEventListener('touchstart', e => {
-      touchStartX = e.changedTouches[0].screenX;
+      if(e.touches.length === 1) touchStartX = e.changedTouches[0].screenX;
     }, {passive: true});
 
     viewerContainer.addEventListener('touchend', e => {
-      touchEndX = e.changedTouches[0].screenX;
-      handleSwipeGesture();
+      if(e.changedTouches.length === 1) {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipeGesture();
+      }
     }, {passive: true});
 
     function handleSwipeGesture() {
-      const swipeThreshold = 50; // Minimum pixel distance to trigger swipe
-      if (touchEndX < touchStartX - swipeThreshold) {
-        // Swiped Left -> Go to Next Page
-        manualChangePage(1);
-      }
-      if (touchEndX > touchStartX + swipeThreshold) {
-        // Swiped Right -> Go to Previous Page
-        manualChangePage(-1);
-      }
+      const swipeThreshold = 50; 
+      if (touchEndX < touchStartX - swipeThreshold) manualChangePage(1); // Swipe Left = Next
+      if (touchEndX > touchStartX + swipeThreshold) manualChangePage(-1); // Swipe Right = Prev
     }
 
     function manualChangePage(directionModifier) {
       if (!currentTuneId) return;
-      
       if (activeVisualView === "music") {
         let pageNum = parseInt(currentMusicPage) || 1;
-        pageNum = Math.max(1, pageNum + directionModifier); // Prevent going below page 1
-        currentMusicPage = pageNum.toString();
+        currentMusicPage = Math.max(1, pageNum + directionModifier).toString();
       } else {
         let pageNum = parseInt(currentDrillPage) || 1;
-        pageNum = Math.max(1, pageNum + directionModifier);
-        currentDrillPage = pageNum.toString();
+        currentDrillPage = Math.max(1, pageNum + directionModifier).toString();
       }
       updateImageView();
     }
 
     // ==========================================
-    // 1. CSV PARSING & AUTO-LOADING ASSETS
+    // DATA LOADING & DROPDOWNS
     // ==========================================
     loadMasterDataBtn.addEventListener('click', async () => {
-      requestWakeLock(); // Request wake lock when user starts interacting
+      requestWakeLock(); 
       try {
         dataStatus.textContent = "Loading...";
         const response = await fetch('map.csv');
@@ -321,20 +322,17 @@
         populateTuneDropdown();
         
         dataStatus.textContent = `Loaded ${masterChunks.length} chunks.`;
-        playerOutput.innerHTML = "CSV Loaded. Select a tune to load audio.";
+        playerOutput.innerHTML = "CSV Loaded. Select a tune.";
       } catch (error) {
-        console.error("Error loading CSV:", error);
-        dataStatus.textContent = "Error: Could not load map.csv.";
+        dataStatus.textContent = "Error loading map.csv.";
       }
     });
 
     function parseCSV(text) {
       masterChunks = [];
       const lines = text.split('\n');
-
       for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue;
-
         const row = lines[i].split(',');
         const chunk = {
           tune: row[0] ? row[0].trim() : "",
@@ -346,10 +344,7 @@
           musicPage: row[6] ? row[6].trim() : "",
           label: row[7] ? row[7].replace(/[\r\n]+/g, '').trim() : ""
         };
-
-        if (chunk.tune && !isNaN(chunk.startBeat)) {
-          masterChunks.push(chunk);
-        }
+        if (chunk.tune && !isNaN(chunk.startBeat)) masterChunks.push(chunk);
       }
     }
 
@@ -364,7 +359,6 @@
     tuneSelect.addEventListener('change', async (e) => {
       currentTuneId = e.target.value;
       populateChunkDropdowns(currentTuneId);
-      
       if (currentTuneId) {
         await loadTuneAssets(currentTuneId);
       } else {
@@ -376,34 +370,27 @@
       stopAllAudio();
       musicBuffer = null;
       loadedTimestamps = [];
-      playerOutput.innerHTML = `Fetching audio and beats for ${tuneName}...`;
-      
+      playerOutput.innerHTML = `Fetching audio...`;
       try {
         const jsonResponse = await fetch(`${tuneName}_beats.json`);
-        if (!jsonResponse.ok) throw new Error(`Could not find ${tuneName}_beats.json`);
         loadedTimestamps = await jsonResponse.json();
-        
         const audioResponse = await fetch(`${tuneName}.mp3`);
-        if (!audioResponse.ok) throw new Error(`Could not find ${tuneName}.mp3`);
         const arrayBuffer = await audioResponse.arrayBuffer();
-        
-        playerOutput.innerHTML = `Decoding audio for ${tuneName}...`;
         musicBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        
-        playerOutput.innerHTML = `Ready! Loaded ${loadedTimestamps.length} beats for ${tuneName}.`;
+        playerOutput.innerHTML = `Ready! Loaded for ${tuneName}.`;
       } catch (error) {
-        console.error("Asset load error:", error);
-        playerOutput.innerHTML = `<span style="color:#f44336;">Error: ${error.message}</span>`;
+        playerOutput.innerHTML = `<span style="color:#f44336;">Error loading assets</span>`;
       }
     }
 
-    function populateChunkDropdowns(selectedTune) {
+    // --- MODIFIED: Accepts target beats to sync state ---
+    function populateChunkDropdowns(selectedTune, targetStartBeat = null, targetEndBeat = null) {
       startChunkSelect.innerHTML = '';
       endChunkSelect.innerHTML = '';
 
       if (!selectedTune) {
-        startChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
-        endChunkSelect.innerHTML = '<option value="">-- Select Tune First --</option>';
+        startChunkSelect.innerHTML = '<option value="">-- Select Tune --</option>';
+        endChunkSelect.innerHTML = '<option value="">-- Select Tune --</option>';
         return;
       }
 
@@ -419,37 +406,48 @@
         let displayName = "";
         if (chunk.label) displayName += `[${chunk.label}] `;
         
-        if (mode === "drill" && chunk.set) {
-          displayName += `Set ${chunk.set}`;
-        } else if (mode === "measures" && chunk.measure) {
-          displayName += `Meas ${chunk.measure}`;
-        } else {
-          displayName += `Beat ${chunk.startBeat}`;
-        }
+        if (mode === "drill" && chunk.set) displayName += `Set ${chunk.set}`;
+        else if (mode === "measures" && chunk.measure) displayName += `Meas ${chunk.measure}`;
+        else displayName += `Beat ${chunk.startBeat}`;
 
         const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}" data-index="${index}">${displayName} (${chunk.counts} cts)</option>`;
-
         startChunkSelect.insertAdjacentHTML('beforeend', optionString);
         endChunkSelect.insertAdjacentHTML('beforeend', optionString);
       });
       
       if(filteredChunks.length > 0) {
+          // Attempt state sync if values were passed
+          if (targetStartBeat !== null) setClosestOption(startChunkSelect, targetStartBeat);
+          if (targetEndBeat !== null) setClosestOption(endChunkSelect, targetEndBeat);
+          
           startChunkSelect.dispatchEvent(new Event('change'));
       }
     }
 
-  // --- STAGE 2: SPLIT "DESTINATION DEFAULT" IMAGE UPDATE LOGIC ---
+    // --- NEW: Helper to find the closest matching beat ---
+    function setClosestOption(selectElement, targetBeat) {
+      let bestIndex = 0;
+      let closestDiff = Infinity;
+      for (let i = 0; i < selectElement.options.length; i++) {
+          let optionBeat = parseInt(selectElement.options[i].value);
+          let diff = Math.abs(optionBeat - targetBeat);
+          if (diff < closestDiff) {
+              closestDiff = diff;
+              bestIndex = i;
+          }
+      }
+      selectElement.selectedIndex = bestIndex;
+    }
+
     function calculateCurrentPages() {
       if (startChunkSelect.selectedIndex === -1 || endChunkSelect.selectedIndex === -1) return;
 
       const startBeat = parseInt(startChunkSelect.value);
       const endBeat = parseInt(endChunkSelect.value);
 
-      // Find where these beats live in the master data
       const masterStartIdx = masterChunks.findIndex(c => c.startBeat === startBeat && c.tune === currentTuneId);
       const masterEndIdx = masterChunks.findIndex(c => c.startBeat === endBeat && c.tune === currentTuneId);
 
-      // 1. Music Page scans backward from START chunk
       if (masterStartIdx !== -1) {
         for (let i = masterStartIdx; i >= 0; i--) {
           if (masterChunks[i].musicPage !== "" && masterChunks[i].musicPage != null) {
@@ -459,7 +457,6 @@
         }
       }
 
-      // 2. Drill Page scans backward from END chunk (Destination Default)
       if (masterEndIdx !== -1) {
         for (let i = masterEndIdx; i >= 0; i--) {
           if (masterChunks[i].drillPage !== "" && masterChunks[i].drillPage != null) {
@@ -468,7 +465,6 @@
           }
         }
       }
-
       updateImageView(); 
     }
 
@@ -476,7 +472,6 @@
       if (startChunkSelect.selectedIndex === -1) return;
       const currentIndex = startChunkSelect.selectedIndex;
       
-      // Auto-advance logic for End Chunk
       if (rehearsalMode.value === "drill") {
         if (currentIndex + 1 < endChunkSelect.options.length) {
           endChunkSelect.selectedIndex = currentIndex + 1;
@@ -486,41 +481,70 @@
       } else {
          endChunkSelect.selectedIndex = currentIndex; 
       }
-      
-      // Trigger the page calculation after auto-advancing
       calculateCurrentPages();
     });
 
-    // Ensure changing the end chunk also recalculates (to trigger Destination Default updates)
     endChunkSelect.addEventListener('change', calculateCurrentPages);
 
     // ==========================================
-    // 2. AUDIO PLAYER LOGIC
+    // AUDIO PLAYER & LIVE TRACKER
     // ==========================================
     function scheduleBeep(time, isHighPitch) {
       let osc = audioCtx.createOscillator();
       let gainNode = audioCtx.createGain();
       
-      osc.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      
-      osc.type = 'square'; 
-      osc.frequency.value = isHighPitch ? 3951.07 : 2637.02; // B7 & E7
+      osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+      osc.type = 'square'; osc.frequency.value = isHighPitch ? 3951.07 : 2637.02; 
       
       let currentMetVol = parseFloat(metVolume.value);
       gainNode.gain.setValueAtTime(currentMetVol, time);
       gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
       
-      osc.start(time);
-      osc.stop(time + 0.1);
+      osc.start(time); osc.stop(time + 0.1);
       scheduledOscillators.push(osc);
     }
 
-    playChunkBtn.addEventListener('click', () => {
-      requestWakeLock(); // Ensure screen stays awake during playback
+    // --- NEW: Live UI Update Loop ---
+    function updatePlaybackUI() {
+      if (!musicSource || audioCtx.state !== 'running') return;
       
+      let now = audioCtx.currentTime;
+      let timeSinceDownbeat = now - playbackActualStartTime;
+      
+      if (timeSinceDownbeat >= 0) {
+        let elapsedAudioTime = timeSinceDownbeat + playbackStartAudioTime; 
+        
+        let currentBeatIdx = globalStartIdx;
+        for (let i = globalStartIdx; i <= globalEndIdx; i++) {
+            if (parseFloat(loadedTimestamps[i]) <= elapsedAudioTime) {
+                currentBeatIdx = i;
+            } else { break; }
+        }
+        
+        let relativeCount = currentBeatIdx - globalStartIdx + 1;
+        let actualBeatNum = currentBeatIdx + 1;
+        
+        let activeChunk = masterChunks.slice().reverse().find(c => c.tune === currentTuneId && c.startBeat <= actualBeatNum);
+        let locationText = "--";
+        
+        if (activeChunk) {
+            locationText = rehearsalMode.value === "drill" && activeChunk.set 
+              ? `Set ${activeChunk.set}` 
+              : `Meas ${activeChunk.measure || "--"}`;
+        }
+        
+        playerOutput.innerHTML = `${locationText} &nbsp;|&nbsp; Count: <span style="color:white;">${relativeCount}</span>`;
+      } else {
+        playerOutput.innerHTML = `Count-in...`;
+      }
+      
+      playbackAnimationId = requestAnimationFrame(updatePlaybackUI);
+    }
+
+    playChunkBtn.addEventListener('click', () => {
+      requestWakeLock(); 
       if(!startChunkSelect.value || !endChunkSelect.value) return alert("Select a start and end chunk.");
-      if(loadedTimestamps.length === 0 || !musicBuffer) return alert("Assets are still loading or missing!");
+      if(loadedTimestamps.length === 0 || !musicBuffer) return alert("Assets missing!");
       
       if (audioCtx.state === 'suspended') audioCtx.resume();
       stopAllAudio(); 
@@ -531,7 +555,7 @@
       const endIdx = (parseInt(endChunkSelect.value) - 1) + endChunkCounts;
       
       if(startIdx < 0 || endIdx >= loadedTimestamps.length || startIdx >= endIdx) {
-        return alert("Invalid beat range. Does your JSON file have enough beats mapped?");
+        return alert("Invalid beat range.");
       }
 
       const startTime = parseFloat(loadedTimestamps[startIdx]);
@@ -575,23 +599,30 @@
       musicGainNode.connect(audioCtx.destination);
       musicSource.start(downbeatTime, startTime, chunkDuration);
 
-      playerOutput.innerHTML = `Playing Chunk...<br>Start: Beat ${startIdx + 1} | End: Beat ${endIdx + 1}`;
+      // --- Pass variables to Live Tracker and start loop ---
+      playbackActualStartTime = downbeatTime; 
+      playbackStartAudioTime = startTime;
+      globalStartIdx = startIdx;
+      globalEndIdx = endIdx;
+      
+      cancelAnimationFrame(playbackAnimationId);
+      playbackAnimationId = requestAnimationFrame(updatePlaybackUI);
     });
 
     pauseBtn.addEventListener('click', () => {
       stopAllAudio();
       audioPlayer.pause(); 
-      playerOutput.innerHTML = "Paused/Stopped.";
+      playerOutput.innerHTML = "Paused.";
     });
 
     stopBtn.addEventListener('click', () => {
       stopAllAudio();
       audioPlayer.pause();
-      playerOutput.innerHTML = "Reset ready for next rep.";
+      playerOutput.innerHTML = "Reset for next rep.";
     });
 
     // ==========================================
-    // 3. MAPPER LOGIC (Hidden in details tag)
+    // MAPPER LOGIC
     // ==========================================
     audioUpload.addEventListener('change', async function(e) {
       const file = e.target.files[0];
