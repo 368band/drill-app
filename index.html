@@ -381,32 +381,45 @@
       }
     }
 
-    // --- STAGE 1: AUTO-ADVANCE & IMAGE UPDATE LOGIC ---
+  // --- STAGE 1: AUTO-ADVANCE & IMAGE UPDATE LOGIC ---
     startChunkSelect.addEventListener('change', () => {
       if (startChunkSelect.selectedIndex === -1) return;
       
       const selectedOption = startChunkSelect.options[startChunkSelect.selectedIndex];
-      const currentIndex = parseInt(selectedOption.getAttribute('data-index'));
+      const selectedBeat = parseInt(selectedOption.value); // startBeat is the value
+      const currentIndex = parseInt(selectedOption.getAttribute('data-index')); // Index in the dropdown
       
-      // Read the specific page numbers from the CSV data embedded in the option
-      const dPage = selectedOption.getAttribute('data-drill');
-      const mPage = selectedOption.getAttribute('data-music');
+      // 1. Find where this chunk lives in the master data
+      const masterIndex = masterChunks.findIndex(c => c.startBeat === selectedBeat && c.tune === currentTuneId);
       
-      if (dPage) currentDrillPage = dPage;
-      if (mPage) currentMusicPage = mPage;
+      // 2. Scan backwards to find the most recent page numbers
+      if (masterIndex !== -1) {
+        let foundDrill = false;
+        let foundMusic = false;
+        
+        for (let i = masterIndex; i >= 0; i--) {
+          if (!foundDrill && masterChunks[i].drillPage !== "") {
+            currentDrillPage = masterChunks[i].drillPage;
+            foundDrill = true;
+          }
+          if (!foundMusic && masterChunks[i].musicPage !== "") {
+            currentMusicPage = masterChunks[i].musicPage;
+            foundMusic = true;
+          }
+          if (foundDrill && foundMusic) break; // Stop scanning once both are found
+        }
+      }
       
-      updateImageView(); // Load the image
+      updateImageView(); // Load the updated image
 
-      // Auto-advance logic: If in Drill mode, pre-select the next set for End Chunk
+      // 3. Auto-advance logic for End Chunk
       if (rehearsalMode.value === "drill") {
         if (currentIndex + 1 < endChunkSelect.options.length) {
           endChunkSelect.selectedIndex = currentIndex + 1;
         } else {
-          endChunkSelect.selectedIndex = currentIndex; // Match if it's the last page
+          endChunkSelect.selectedIndex = currentIndex; 
         }
       } else {
-         // Optional: Do you want auto-advance in Measures mode too? 
-         // Currently leaving it out to match your description, but can easily be added.
          endChunkSelect.selectedIndex = currentIndex; 
       }
     });
