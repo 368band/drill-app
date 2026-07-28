@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Removed user-scalable=no to allow pinch-to-zoom on iPad -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Marching Band App - Rehearsal Mode</title>
   <style>
@@ -20,7 +19,6 @@
     .viewer-section {
       flex-grow: 1; position: relative; background-color: #000;
       display: flex; justify-content: center; align-items: center; overflow: auto;
-      /* Allows native touch interactions on the image */
       touch-action: pan-x pan-y pinch-zoom; 
     }
     #display-image { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -59,7 +57,6 @@
     
     /* Utilities */
     .status-text { font-size: 14px; color: #aaa; }
-    /* Updated Player Output for Live Tracking */
     #playerOutput { 
       font-family: monospace; color: #4CAF50; font-size: 18px; font-weight: bold; 
       text-align: center; width: 100%; margin-top: 5px; padding: 5px;
@@ -145,7 +142,7 @@
   </div>
 
   <script>
-    // --- STAGE 2: WAKE LOCK LOGIC ---
+    // --- WAKE LOCK LOGIC ---
     let wakeLock = null;
     async function requestWakeLock() {
       try {
@@ -208,7 +205,7 @@
     let musicSource = null;
     let musicGainNode = null;
 
-    // --- STAGE 3: LIVE TRACKER VARIABLES ---
+    // Live Tracker Variables
     let playbackAnimationId = null;
     let playbackActualStartTime = 0; 
     let playbackStartAudioTime = 0;
@@ -224,7 +221,7 @@
       scheduledOscillators.forEach(osc => { try { osc.stop(); } catch(e) {} });
       scheduledOscillators = [];
       if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
-      cancelAnimationFrame(playbackAnimationId); // Stop the visual tracker
+      cancelAnimationFrame(playbackAnimationId);
     }
 
     // ==========================================
@@ -258,7 +255,6 @@
       updateImageView();
     });
 
-    // --- MODIFIED: Captures current beat before switching modes ---
     rehearsalMode.addEventListener("change", () => {
       let prevStartBeat = startChunkSelect.value ? parseInt(startChunkSelect.value) : null;
       let prevEndBeat = endChunkSelect.value ? parseInt(endChunkSelect.value) : null;
@@ -383,7 +379,6 @@
       }
     }
 
-    // --- MODIFIED: Accepts target beats to sync state ---
     function populateChunkDropdowns(selectedTune, targetStartBeat = null, targetEndBeat = null) {
       startChunkSelect.innerHTML = '';
       endChunkSelect.innerHTML = '';
@@ -416,15 +411,20 @@
       });
       
       if(filteredChunks.length > 0) {
-          // Attempt state sync if values were passed
+          // Attempt start sync
           if (targetStartBeat !== null) setClosestOption(startChunkSelect, targetStartBeat);
-          if (targetEndBeat !== null) setClosestOption(endChunkSelect, targetEndBeat);
           
+          // Trigger change (this fires the auto-advance logic)
           startChunkSelect.dispatchEvent(new Event('change'));
+
+          // Override the auto-advance with the correct end beat, then recalculate pages
+          if (targetEndBeat !== null) {
+              setClosestOption(endChunkSelect, targetEndBeat);
+              calculateCurrentPages();
+          }
       }
     }
 
-    // --- NEW: Helper to find the closest matching beat ---
     function setClosestOption(selectElement, targetBeat) {
       let bestIndex = 0;
       let closestDiff = Infinity;
@@ -504,7 +504,6 @@
       scheduledOscillators.push(osc);
     }
 
-    // --- NEW: Live UI Update Loop ---
     function updatePlaybackUI() {
       if (!musicSource || audioCtx.state !== 'running') return;
       
@@ -552,7 +551,14 @@
       const startIdx = parseInt(startChunkSelect.value) - 1;
       const endOption = endChunkSelect.options[endChunkSelect.selectedIndex];
       const endChunkCounts = parseInt(endOption.getAttribute('data-counts'));
-      const endIdx = (parseInt(endChunkSelect.value) - 1) + endChunkCounts;
+      
+      let endIdx;
+      // FIX: Stop at beat 1 of the destination chunk for Drill moves. Play through for Measures.
+      if (rehearsalMode.value === "drill" && startChunkSelect.value !== endChunkSelect.value) {
+        endIdx = parseInt(endChunkSelect.value) - 1;
+      } else {
+        endIdx = (parseInt(endChunkSelect.value) - 1) + endChunkCounts;
+      }
       
       if(startIdx < 0 || endIdx >= loadedTimestamps.length || startIdx >= endIdx) {
         return alert("Invalid beat range.");
@@ -599,7 +605,6 @@
       musicGainNode.connect(audioCtx.destination);
       musicSource.start(downbeatTime, startTime, chunkDuration);
 
-      // --- Pass variables to Live Tracker and start loop ---
       playbackActualStartTime = downbeatTime; 
       playbackStartAudioTime = startTime;
       globalStartIdx = startIdx;
