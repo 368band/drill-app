@@ -19,14 +19,15 @@
     .viewer-section {
       flex-grow: 1; position: relative; background-color: #000;
       display: flex; justify-content: center; align-items: center; overflow: hidden;
+      touch-action: pan-y; /* Prevents browser back-navigation on horizontal swipes */
     }
     #display-image { max-width: 100%; max-height: 100%; object-fit: contain; }
     
    .view-toggle {
       position: absolute; bottom: 20px; 
-      background: rgba(0, 0, 0, 0.6); /* Changed to dark grey/black for contrast */
+      background: rgba(0, 0, 0, 0.6); 
       backdrop-filter: blur(10px); border-radius: 30px; padding: 5px; display: flex; gap: 5px;
-      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5); /* Adds a drop shadow so it pops off the page */
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5); 
     }
     .view-toggle button {
       background: transparent; border: none; color: #ffffff; padding: 10px 20px;
@@ -38,9 +39,9 @@
     .dashboard-section {
       background-color: #1e1e1e; padding: 15px; display: flex; flex-direction: column; gap: 10px;
       border-top: 1px solid #333; 
-      padding-bottom: calc(env(safe-area-inset-bottom, 15px) + 15px); /* Adds a little extra breathing room */
-      max-height: 40vh; overflow-y: auto; /* Allows dashboard to scroll if needed on small screens */
-      -webkit-overflow-scrolling: touch; /* Ensures smooth finger scrolling on iPad */
+      padding-bottom: calc(env(safe-area-inset-bottom, 15px) + 15px); 
+      max-height: 40vh; overflow-y: auto; 
+      -webkit-overflow-scrolling: touch; 
     }
 
     .dashboard-row { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -72,7 +73,7 @@
   <div class="app-container">
 
     <!-- ==================== VIEWER SECTION ==================== -->
-    <div class="viewer-section">
+    <div class="viewer-section" id="viewer-container">
       <img id="display-image" src="" alt="Load a tune to view pages" style="display: none;">
       
       <div class="view-toggle">
@@ -141,7 +142,27 @@
   </div>
 
   <script>
-    // --- STAGE 1: UI & IMAGE VARIABLES ---
+    // --- STAGE 2: WAKE LOCK LOGIC ---
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Screen Wake Lock acquired');
+        }
+      } catch (err) {
+        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+      }
+    }
+    
+    // Re-acquire wake lock if the app was minimized and brought back
+    document.addEventListener('visibilitychange', async () => {
+      if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+      }
+    });
+
+    // --- STAGE 1 & 2: UI & IMAGE VARIABLES ---
     const displayImage = document.getElementById("display-image");
     const btnMusicView = document.getElementById("btn-music-view");
     const btnDrillView = document.getElementById("btn-drill-view");
@@ -208,7 +229,7 @@
       if (!currentTuneId) return;
       displayImage.style.display = "block"; // Unhide if it's the first load
       
-      // .Force page numbers to be at least two digits (e.g., 1 becomes "01")
+      // Force page numbers to be at least two digits (e.g., 1 becomes "01")
       let mPageFormatted = String(currentMusicPage).padStart(2, '0');
       let dPageFormatted = String(currentDrillPage).padStart(2, '0');
       
@@ -234,7 +255,6 @@
     });
 
     rehearsalMode.addEventListener("change", () => {
-      // When mode changes, optionally auto-flip the visual view to match
       if (rehearsalMode.value === "drill") {
         btnDrillView.click(); 
       } else {
@@ -244,9 +264,53 @@
     });
 
     // ==========================================
+    // STAGE 2: SWIPE-TO-TURN GESTURE LOGIC
+    // ==========================================
+    const viewerContainer = document.getElementById('viewer-container');
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    viewerContainer.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, {passive: true});
+
+    viewerContainer.addEventListener('touchend', e => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipeGesture();
+    }, {passive: true});
+
+    function handleSwipeGesture() {
+      const swipeThreshold = 50; // Minimum pixel distance to trigger swipe
+      if (touchEndX < touchStartX - swipeThreshold) {
+        // Swiped Left -> Go to Next Page
+        manualChangePage(1);
+      }
+      if (touchEndX > touchStartX + swipeThreshold) {
+        // Swiped Right -> Go to Previous Page
+        manualChangePage(-1);
+      }
+    }
+
+    function manualChangePage(directionModifier) {
+      if (!currentTuneId) return;
+      
+      if (activeVisualView === "music") {
+        let pageNum = parseInt(currentMusicPage) || 1;
+        pageNum = Math.max(1, pageNum + directionModifier); // Prevent going below page 1
+        currentMusicPage = pageNum.toString();
+      } else {
+        let pageNum = parseInt(currentDrillPage) || 1;
+        pageNum = Math.max(1, pageNum + directionModifier);
+        currentDrillPage = pageNum.toString();
+      }
+      updateImageView();
+    }
+
+    // ==========================================
     // 1. CSV PARSING & AUTO-LOADING ASSETS
     // ==========================================
     loadMasterDataBtn.addEventListener('click', async () => {
+      requestWakeLock(); // Request wake lock when user starts interacting
       try {
         dataStatus.textContent = "Loading...";
         const response = await fetch('map.csv');
@@ -333,7 +397,6 @@
       }
     }
 
-    // --- STAGE 1: MODIFIED DROPDOWN LOGIC ---
     function populateChunkDropdowns(selectedTune) {
       startChunkSelect.innerHTML = '';
       endChunkSelect.innerHTML = '';
@@ -346,21 +409,16 @@
 
       const mode = rehearsalMode.value;
       
-      // Filter chunks strictly based on the selected tune AND selected mode
       const filteredChunks = masterChunks.filter(c => {
         if (c.tune !== selectedTune) return false;
-        // In Drill Mode, only show chunks that have a defined 'set' or 'drillPage'
         if (mode === "drill") return c.set !== "" || c.drillPage !== "";
-        // In Measures Mode, only show chunks that have a defined 'measure' or 'musicPage'
         return c.measure !== "" || c.musicPage !== "";
       });
 
       filteredChunks.forEach((chunk, index) => {
         let displayName = "";
-        
         if (chunk.label) displayName += `[${chunk.label}] `;
         
-        // Format names based on mode
         if (mode === "drill" && chunk.set) {
           displayName += `Set ${chunk.set}`;
         } else if (mode === "measures" && chunk.measure) {
@@ -369,50 +427,56 @@
           displayName += `Beat ${chunk.startBeat}`;
         }
 
-        const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}" data-index="${index}" data-drill="${chunk.drillPage}" data-music="${chunk.musicPage}">${displayName} (${chunk.counts} cts)</option>`;
+        const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}" data-index="${index}">${displayName} (${chunk.counts} cts)</option>`;
 
         startChunkSelect.insertAdjacentHTML('beforeend', optionString);
         endChunkSelect.insertAdjacentHTML('beforeend', optionString);
       });
       
-      // Trigger a change to load the first image immediately
       if(filteredChunks.length > 0) {
           startChunkSelect.dispatchEvent(new Event('change'));
       }
     }
 
-  // --- STAGE 1: AUTO-ADVANCE & IMAGE UPDATE LOGIC ---
-    startChunkSelect.addEventListener('change', () => {
-      if (startChunkSelect.selectedIndex === -1) return;
-      
-      const selectedOption = startChunkSelect.options[startChunkSelect.selectedIndex];
-      const selectedBeat = parseInt(selectedOption.value); // startBeat is the value
-      const currentIndex = parseInt(selectedOption.getAttribute('data-index')); // Index in the dropdown
-      
-      // 1. Find where this chunk lives in the master data
-      const masterIndex = masterChunks.findIndex(c => c.startBeat === selectedBeat && c.tune === currentTuneId);
-      
-      // 2. Scan backwards independently
-      if (masterIndex !== -1) {
-        // Scan for Music
-        for (let i = masterIndex; i >= 0; i--) {
+  // --- STAGE 2: SPLIT "DESTINATION DEFAULT" IMAGE UPDATE LOGIC ---
+    function calculateCurrentPages() {
+      if (startChunkSelect.selectedIndex === -1 || endChunkSelect.selectedIndex === -1) return;
+
+      const startBeat = parseInt(startChunkSelect.value);
+      const endBeat = parseInt(endChunkSelect.value);
+
+      // Find where these beats live in the master data
+      const masterStartIdx = masterChunks.findIndex(c => c.startBeat === startBeat && c.tune === currentTuneId);
+      const masterEndIdx = masterChunks.findIndex(c => c.startBeat === endBeat && c.tune === currentTuneId);
+
+      // 1. Music Page scans backward from START chunk
+      if (masterStartIdx !== -1) {
+        for (let i = masterStartIdx; i >= 0; i--) {
           if (masterChunks[i].musicPage !== "" && masterChunks[i].musicPage != null) {
             currentMusicPage = masterChunks[i].musicPage;
-            break; // Stop music scan
-          }
-        }
-        // Scan for Drill
-        for (let i = masterIndex; i >= 0; i--) {
-          if (masterChunks[i].drillPage !== "" && masterChunks[i].drillPage != null) {
-            currentDrillPage = masterChunks[i].drillPage;
-            break; // Stop drill scan
+            break;
           }
         }
       }
-      
-      updateImageView(); // Load the updated image
 
-      // 3. Auto-advance logic for End Chunk
+      // 2. Drill Page scans backward from END chunk (Destination Default)
+      if (masterEndIdx !== -1) {
+        for (let i = masterEndIdx; i >= 0; i--) {
+          if (masterChunks[i].drillPage !== "" && masterChunks[i].drillPage != null) {
+            currentDrillPage = masterChunks[i].drillPage;
+            break;
+          }
+        }
+      }
+
+      updateImageView(); 
+    }
+
+    startChunkSelect.addEventListener('change', () => {
+      if (startChunkSelect.selectedIndex === -1) return;
+      const currentIndex = startChunkSelect.selectedIndex;
+      
+      // Auto-advance logic for End Chunk
       if (rehearsalMode.value === "drill") {
         if (currentIndex + 1 < endChunkSelect.options.length) {
           endChunkSelect.selectedIndex = currentIndex + 1;
@@ -422,10 +486,16 @@
       } else {
          endChunkSelect.selectedIndex = currentIndex; 
       }
+      
+      // Trigger the page calculation after auto-advancing
+      calculateCurrentPages();
     });
 
+    // Ensure changing the end chunk also recalculates (to trigger Destination Default updates)
+    endChunkSelect.addEventListener('change', calculateCurrentPages);
+
     // ==========================================
-    // 2. AUDIO PLAYER LOGIC (Untouched)
+    // 2. AUDIO PLAYER LOGIC
     // ==========================================
     function scheduleBeep(time, isHighPitch) {
       let osc = audioCtx.createOscillator();
@@ -447,6 +517,8 @@
     }
 
     playChunkBtn.addEventListener('click', () => {
+      requestWakeLock(); // Ensure screen stays awake during playback
+      
       if(!startChunkSelect.value || !endChunkSelect.value) return alert("Select a start and end chunk.");
       if(loadedTimestamps.length === 0 || !musicBuffer) return alert("Assets are still loading or missing!");
       
