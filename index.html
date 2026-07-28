@@ -392,21 +392,21 @@
       // 1. Find where this chunk lives in the master data
       const masterIndex = masterChunks.findIndex(c => c.startBeat === selectedBeat && c.tune === currentTuneId);
       
-      // 2. Scan backwards to find the most recent page numbers
+      // 2. Scan backwards independently
       if (masterIndex !== -1) {
-        let foundDrill = false;
-        let foundMusic = false;
-        
+        // Scan for Music
         for (let i = masterIndex; i >= 0; i--) {
-          if (!foundDrill && masterChunks[i].drillPage !== "") {
-            currentDrillPage = masterChunks[i].drillPage;
-            foundDrill = true;
-          }
-          if (!foundMusic && masterChunks[i].musicPage !== "") {
+          if (masterChunks[i].musicPage !== "" && masterChunks[i].musicPage != null) {
             currentMusicPage = masterChunks[i].musicPage;
-            foundMusic = true;
+            break; // Stop music scan
           }
-          if (foundDrill && foundMusic) break; // Stop scanning once both are found
+        }
+        // Scan for Drill
+        for (let i = masterIndex; i >= 0; i--) {
+          if (masterChunks[i].drillPage !== "" && masterChunks[i].drillPage != null) {
+            currentDrillPage = masterChunks[i].drillPage;
+            break; // Stop drill scan
+          }
         }
       }
       
