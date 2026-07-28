@@ -2,87 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Marching Band App - Rehearsal Mode</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; background: #222; color: white; max-width: 800px; margin: 0 auto; }
-    button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border-radius: 8px; border: none; }
-    input[type="file"], input[type="number"], select { padding: 10px; font-size: 16px; margin: 5px; }
-    hr { margin: 40px 0; border: 1px solid #444; }
-    .control-group { background: #333; padding: 15px; border-radius: 8px; margin: 15px 0; }
+    /* --- STAGE 1: LOCKED SPLIT-SCREEN LAYOUT --- */
+    body, html { 
+      margin: 0; padding: 0; height: 100vh; width: 100vw; 
+      overflow: hidden; /* Locks screen from accidental scrolling */
+      background-color: #121212; color: white; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+    }
+
+    .app-container { display: flex; flex-direction: column; height: 100%; }
+
+    /* Viewer Section */
+    .viewer-section {
+      flex-grow: 1; position: relative; background-color: #000;
+      display: flex; justify-content: center; align-items: center; overflow: hidden;
+    }
+    #display-image { max-width: 100%; max-height: 100%; object-fit: contain; }
     
-    #playChunkBtn { background-color: #4CAF50; color: white; font-weight: bold; padding: 15px 30px; font-size: 18px; }
-    #pauseBtn { background-color: #f44336; color: white; }
-    #stopBtn { background-color: #9e9e9e; color: black; }
-    #playerOutput { margin-top: 15px; font-family: monospace; background: #111; padding: 15px; border-radius: 5px; text-align: center; color: #4CAF50; font-weight: bold; }
+    .view-toggle {
+      position: absolute; bottom: 20px; background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(10px); border-radius: 30px; padding: 5px; display: flex; gap: 5px;
+    }
+    .view-toggle button {
+      background: transparent; border: none; color: white; padding: 10px 20px;
+      border-radius: 20px; font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    .view-toggle button.active { background: #007aff; }
+
+    /* Dashboard Section */
+    .dashboard-section {
+      background-color: #1e1e1e; padding: 15px; display: flex; flex-direction: column; gap: 10px;
+      border-top: 1px solid #333; padding-bottom: env(safe-area-inset-bottom, 15px);
+      max-height: 40vh; overflow-y: auto; /* Allows dashboard to scroll if needed on small screens */
+    }
+
+    .dashboard-row { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; }
     
-    /* Mapper Styles */
-    details { background: #111; padding: 15px; border-radius: 8px; margin-top: 40px; text-align: left; }
-    summary { font-weight: bold; cursor: pointer; font-size: 1.2em; color: #888; }
-    #tapBtn { background-color: #4CAF50; color: white; font-weight: bold; width: 200px; height: 80px; }
+    select, button, input[type="file"], input[type="number"] { 
+      font-size: 16px; padding: 8px; border-radius: 8px; border: 1px solid #555; background: #333; color: white; 
+    }
+    
+    /* Buttons */
+    #playChunkBtn { background-color: #4CAF50; color: white; font-weight: bold; padding: 12px 24px; flex-grow: 1; }
+    #pauseBtn { background-color: #f44336; color: white; padding: 12px 24px; }
+    #stopBtn { background-color: #9e9e9e; color: black; padding: 12px 24px; }
+    
+    /* Utilities */
+    .status-text { font-size: 14px; color: #aaa; }
+    #playerOutput { font-family: monospace; color: #4CAF50; font-weight: bold; text-align: center; width: 100%; margin-top: 5px;}
+    
+    /* Mapper Styles (Kept for instructor tools) */
+    details { background: #111; padding: 15px; border-radius: 8px; margin-top: 10px; text-align: left; }
+    summary { font-weight: bold; cursor: pointer; color: #888; }
+    #tapBtn { background-color: #4CAF50; color: white; font-weight: bold; width: 100%; height: 60px; margin-top: 10px; }
     #startBtn { background-color: #008CBA; color: white; }
     #saveBtn { background-color: #ff9800; color: white; }
-    #output { margin-top: 15px; font-family: monospace; background: #000; padding: 10px; border-radius: 5px; max-height: 150px; overflow-y: auto; color: #ccc; }
+    #output { margin-top: 10px; font-family: monospace; background: #000; padding: 10px; border-radius: 5px; max-height: 100px; overflow-y: auto; color: #ccc; }
   </style>
 </head>
 <body>
 
-  <!-- ==================== REHEARSAL MODE ==================== -->
-  <h2>Rehearsal Mode</h2>
-  
-  <div class="control-group">
-    <button id="loadMasterDataBtn">1. Load Master Show Data</button>
-    <span id="dataStatus">Waiting for CSV...</span>
-  </div>
-  
-  <div class="control-group">
-    Tune: <select id="tuneSelect"><option value="">-- Load CSV First --</option></select>
-  </div>
-  
-  <div class="control-group">
-    Start Chunk: <select id="startChunk"><option value="">-- Select Tune First --</option></select>
-    &nbsp;&nbsp;
-    End Chunk: <select id="endChunk"><option value="">-- Select Tune First --</option></select>
-  </div>
+  <div class="app-container">
 
-  <div class="control-group">
-    <label>Music Vol: <input type="range" id="musicVolume" min="0" max="1" step="0.1" value="0.8"></label>
-    <label>Met Vol: <input type="range" id="metVolume" min="0" max="1" step="0.1" value="1.0"></label>
-    <label><input type="checkbox" id="playMetToggle" checked> Metronome On</label>
-    <br><br>
-    <label>Count-In: 
-      <select id="countInSelect">
-        <option value="8">8 Beats</option>
-        <option value="4">4 Beats</option>
-      </select>
-    </label>
-  </div>
-
-  <div>
-    <button id="playChunkBtn">Play Selection</button>
-    <button id="pauseBtn">Pause</button>
-    <button id="stopBtn">Stop / Reset</button>
-  </div>
-  <div id="playerOutput">Awaiting Data...</div>
-
-  <!-- ==================== TRAINING MODE (HIDDEN) ==================== -->
-  <details>
-    <summary>Instructor Tools (Beat Mapper)</summary>
-    <div class="control-group">
-      <label>Audio File: <input type="file" id="audioUpload" accept="audio/*"></label><br><br>
-      <audio id="audioPlayer"></audio>
-      <div>
-        <button id="startBtn">1. Play Audio</button>
-        <button id="tapBtn">2. TAP (Spacebar)</button>
+    <!-- ==================== VIEWER SECTION ==================== -->
+    <div class="viewer-section">
+      <img id="display-image" src="" alt="Load a tune to view pages" style="display: none;">
+      
+      <div class="view-toggle">
+        <button id="btn-music-view" class="active">Music</button>
+        <button id="btn-drill-view">Drill</button>
       </div>
-      <div>
-        <button id="saveBtn">3. Save Taps Data</button>
-      </div>
-      <div id="output">Timestamps will appear here...</div>
     </div>
-  </details>
+
+    <!-- ==================== DASHBOARD SECTION ==================== -->
+    <div class="dashboard-section">
+      
+      <!-- Row 1: Global Setup -->
+      <div class="dashboard-row">
+        <button id="loadMasterDataBtn">1. Load Master Data</button>
+        <select id="tuneSelect"><option value="">-- Load CSV First --</option></select>
+        <select id="rehearsalMode">
+          <option value="measures">Measures Mode</option>
+          <option value="drill">Drill Mode</option>
+        </select>
+        <span id="dataStatus" class="status-text">Waiting for CSV...</span>
+      </div>
+      
+      <!-- Row 2: Chunk Selection -->
+      <div class="dashboard-row">
+        <label>Start: <select id="startChunk"><option value="">-- Select Tune First --</option></select></label>
+        <label>End: <select id="endChunk"><option value="">-- Select Tune First --</option></select></label>
+      </div>
+
+      <!-- Row 3: Playback Controls -->
+      <div class="dashboard-row">
+        <button id="playChunkBtn">▶ Play Selection</button>
+        <button id="pauseBtn">Pause</button>
+        <button id="stopBtn">■ Stop</button>
+      </div>
+      <div id="playerOutput">Awaiting Data...</div>
+
+      <!-- Row 4: Audio Options -->
+      <div class="dashboard-row" style="font-size: 14px;">
+        <label>Music Vol: <input type="range" id="musicVolume" min="0" max="1" step="0.1" value="0.8" style="width: 80px;"></label>
+        <label>Met Vol: <input type="range" id="metVolume" min="0" max="1" step="0.1" value="1.0" style="width: 80px;"></label>
+        <label><input type="checkbox" id="playMetToggle" checked> Met</label>
+        <label>Count-In: 
+          <select id="countInSelect">
+            <option value="8">8 Beats</option>
+            <option value="4">4 Beats</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- ==================== TRAINING MODE (HIDDEN) ==================== -->
+      <details>
+        <summary>Instructor Tools (Beat Mapper)</summary>
+        <div class="control-group">
+          <label>Audio File: <input type="file" id="audioUpload" accept="audio/*"></label><br><br>
+          <audio id="audioPlayer"></audio>
+          <div>
+            <button id="startBtn">1. Play Audio</button>
+            <button id="tapBtn">2. TAP (Spacebar)</button>
+          </div>
+          <div><button id="saveBtn">3. Save Taps Data</button></div>
+          <div id="output">Timestamps will appear here...</div>
+        </div>
+      </details>
+
+    </div>
+  </div>
 
   <script>
+    // --- STAGE 1: UI & IMAGE VARIABLES ---
+    const displayImage = document.getElementById("display-image");
+    const btnMusicView = document.getElementById("btn-music-view");
+    const btnDrillView = document.getElementById("btn-drill-view");
+    const rehearsalMode = document.getElementById("rehearsalMode");
+    
+    let currentMusicPage = "1";
+    let currentDrillPage = "1";
+    let activeVisualView = "music"; // 'music' or 'drill'
+    let currentTuneId = "";
+
     // --- MAPPER VARIABLES ---
     const audioUpload = document.getElementById('audioUpload');
     const audioPlayer = document.getElementById('audioPlayer');
@@ -123,22 +188,52 @@
     // Volume listener
     musicVolume.addEventListener('input', (e) => {
       audioPlayer.volume = e.target.value; 
-      if (musicGainNode) {
-        musicGainNode.gain.value = e.target.value; 
-      }
+      if (musicGainNode) musicGainNode.gain.value = e.target.value; 
     });
 
     function stopAllAudio() {
-      scheduledOscillators.forEach(osc => {
-        try { osc.stop(); } catch(e) {}
-      });
+      scheduledOscillators.forEach(osc => { try { osc.stop(); } catch(e) {} });
       scheduledOscillators = [];
+      if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
+    }
+
+    // ==========================================
+    // STAGE 1: IMAGE VIEW TOGGLE LOGIC
+    // ==========================================
+    function updateImageView() {
+      if (!currentTuneId) return;
+      displayImage.style.display = "block"; // Unhide if it's the first load
       
-      if (musicSource) {
-        try { musicSource.stop(); } catch(e) {}
-        musicSource = null;
+      if (activeVisualView === "music") {
+        displayImage.src = `images/${currentTuneId}_music_${currentMusicPage}.jpg`;
+      } else {
+        displayImage.src = `images/${currentTuneId}_drill_${currentDrillPage}.jpg`;
       }
     }
+
+    btnMusicView.addEventListener("click", () => {
+      activeVisualView = "music";
+      btnMusicView.classList.add("active");
+      btnDrillView.classList.remove("active");
+      updateImageView();
+    });
+
+    btnDrillView.addEventListener("click", () => {
+      activeVisualView = "drill";
+      btnDrillView.classList.add("active");
+      btnMusicView.classList.remove("active");
+      updateImageView();
+    });
+
+    rehearsalMode.addEventListener("change", () => {
+      // When mode changes, optionally auto-flip the visual view to match
+      if (rehearsalMode.value === "drill") {
+        btnDrillView.click(); 
+      } else {
+        btnMusicView.click();
+      }
+      populateChunkDropdowns(currentTuneId);
+    });
 
     // ==========================================
     // 1. CSV PARSING & AUTO-LOADING ASSETS
@@ -177,7 +272,6 @@
           counts: parseInt(row[4].trim()),
           drillPage: row[5] ? row[5].trim() : "",
           musicPage: row[6] ? row[6].trim() : "",
-          // Added robust regex to strip hidden carriage returns that break labels
           label: row[7] ? row[7].replace(/[\r\n]+/g, '').trim() : ""
         };
 
@@ -190,19 +284,19 @@
     function populateTuneDropdown() {
       tuneSelect.innerHTML = '<option value="">-- Select a Tune --</option>';
       const uniqueTunes = [...new Set(masterChunks.map(c => c.tune))];
-      
       uniqueTunes.forEach(tune => {
         tuneSelect.insertAdjacentHTML('beforeend', `<option value="${tune}">${tune}</option>`);
       });
     }
 
-    // AUTO-LOAD TRIGGER
     tuneSelect.addEventListener('change', async (e) => {
-      const selectedTune = e.target.value;
-      populateChunkDropdowns(selectedTune);
+      currentTuneId = e.target.value;
+      populateChunkDropdowns(currentTuneId);
       
-      if (selectedTune) {
-        await loadTuneAssets(selectedTune);
+      if (currentTuneId) {
+        await loadTuneAssets(currentTuneId);
+      } else {
+        displayImage.style.display = "none";
       }
     });
 
@@ -231,6 +325,7 @@
       }
     }
 
+    // --- STAGE 1: MODIFIED DROPDOWN LOGIC ---
     function populateChunkDropdowns(selectedTune) {
       startChunkSelect.innerHTML = '';
       endChunkSelect.innerHTML = '';
@@ -241,32 +336,75 @@
         return;
       }
 
-      const filteredChunks = masterChunks.filter(c => c.tune === selectedTune);
+      const mode = rehearsalMode.value;
+      
+      // Filter chunks strictly based on the selected tune AND selected mode
+      const filteredChunks = masterChunks.filter(c => {
+        if (c.tune !== selectedTune) return false;
+        // In Drill Mode, only show chunks that have a defined 'set' or 'drillPage'
+        if (mode === "drill") return c.set !== "" || c.drillPage !== "";
+        // In Measures Mode, only show chunks that have a defined 'measure' or 'musicPage'
+        return c.measure !== "" || c.musicPage !== "";
+      });
 
-      filteredChunks.forEach(chunk => {
-        let nameParts = [];
+      filteredChunks.forEach((chunk, index) => {
         let displayName = "";
         
-        // Put the label in brackets at the front if it exists
-        if (chunk.label) {
-          displayName += `[${chunk.label}] `;
-        }
+        if (chunk.label) displayName += `[${chunk.label}] `;
         
-        if (chunk.set) nameParts.push(`Set ${chunk.set}`);
-        if (chunk.measure) nameParts.push(`Meas ${chunk.measure}`);
+        // Format names based on mode
+        if (mode === "drill" && chunk.set) {
+          displayName += `Set ${chunk.set}`;
+        } else if (mode === "measures" && chunk.measure) {
+          displayName += `Meas ${chunk.measure}`;
+        } else {
+          displayName += `Beat ${chunk.startBeat}`;
+        }
 
-        if (nameParts.length > 0) displayName += nameParts.join(" | ");
-        if (displayName.trim() === "") displayName = `Beat ${chunk.startBeat}`;
-
-        const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}">${displayName} (${chunk.counts} cts)</option>`;
+        const optionString = `<option value="${chunk.startBeat}" data-counts="${chunk.counts}" data-index="${index}" data-drill="${chunk.drillPage}" data-music="${chunk.musicPage}">${displayName} (${chunk.counts} cts)</option>`;
 
         startChunkSelect.insertAdjacentHTML('beforeend', optionString);
         endChunkSelect.insertAdjacentHTML('beforeend', optionString);
       });
+      
+      // Trigger a change to load the first image immediately
+      if(filteredChunks.length > 0) {
+          startChunkSelect.dispatchEvent(new Event('change'));
+      }
     }
 
+    // --- STAGE 1: AUTO-ADVANCE & IMAGE UPDATE LOGIC ---
+    startChunkSelect.addEventListener('change', () => {
+      if (startChunkSelect.selectedIndex === -1) return;
+      
+      const selectedOption = startChunkSelect.options[startChunkSelect.selectedIndex];
+      const currentIndex = parseInt(selectedOption.getAttribute('data-index'));
+      
+      // Read the specific page numbers from the CSV data embedded in the option
+      const dPage = selectedOption.getAttribute('data-drill');
+      const mPage = selectedOption.getAttribute('data-music');
+      
+      if (dPage) currentDrillPage = dPage;
+      if (mPage) currentMusicPage = mPage;
+      
+      updateImageView(); // Load the image
+
+      // Auto-advance logic: If in Drill mode, pre-select the next set for End Chunk
+      if (rehearsalMode.value === "drill") {
+        if (currentIndex + 1 < endChunkSelect.options.length) {
+          endChunkSelect.selectedIndex = currentIndex + 1;
+        } else {
+          endChunkSelect.selectedIndex = currentIndex; // Match if it's the last page
+        }
+      } else {
+         // Optional: Do you want auto-advance in Measures mode too? 
+         // Currently leaving it out to match your description, but can easily be added.
+         endChunkSelect.selectedIndex = currentIndex; 
+      }
+    });
+
     // ==========================================
-    // 2. AUDIO PLAYER LOGIC
+    // 2. AUDIO PLAYER LOGIC (Untouched)
     // ==========================================
     function scheduleBeep(time, isHighPitch) {
       let osc = audioCtx.createOscillator();
@@ -314,41 +452,34 @@
       let beatDuration = totalTimeDiff / beatsToAverage || 0.5; 
       
       let now = audioCtx.currentTime;
-      let countInBeats = parseInt(countInSelect.value); // Get dynamic count-in value
+      let countInBeats = parseInt(countInSelect.value);
       
-      // Schedule variable prep (4 or 8 counts)
       for (let i = 0; i < countInBeats; i++) {
         let clickTime = now + (i * beatDuration);
-        // High pitch on beat 1, and beat 5 (if doing 8 counts)
         let isHigh = (i === 0 || (countInBeats === 8 && i === 4));
         scheduleBeep(clickTime, isHigh);
       }
 
-      // Schedule in-music metronome
       if (playMetToggle.checked) {
         for (let i = startIdx; i <= endIdx; i++) {
           let timeOffsetFromStart = parseFloat(loadedTimestamps[i]) - startTime;
           let clickTime = now + (countInBeats * beatDuration) + timeOffsetFromStart;
-          
           let relativeBeat = i - startIdx;
           let isHigh = (relativeBeat % 2 === 0);
           scheduleBeep(clickTime, isHigh);
         }
       }
 
-      // Schedule music
       let downbeatTime = now + (countInBeats * beatDuration);
       let chunkDuration = stopTime - startTime;
 
       musicSource = audioCtx.createBufferSource();
       musicSource.buffer = musicBuffer;
-      
       musicGainNode = audioCtx.createGain();
       musicGainNode.gain.value = parseFloat(musicVolume.value);
       
       musicSource.connect(musicGainNode);
       musicGainNode.connect(audioCtx.destination);
-      
       musicSource.start(downbeatTime, startTime, chunkDuration);
 
       playerOutput.innerHTML = `Playing Chunk...<br>Start: Beat ${startIdx + 1} | End: Beat ${endIdx + 1}`;
