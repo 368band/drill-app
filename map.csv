@@ -52,11 +52,11 @@ Vehicle,,50,197,4,,,
 Vehicle,Set #15,51,201,4,15,10,
 Vehicle,Set #16 & 17,52,205,4,16,10,
 Vehicle,Set 17-END,53,209,4,17,10,
-Hit_the_Road_Jack,,1,1,4,,,
+Hit_the_Road_Jack,Set #1,1,1,4,1,,
 Hit_the_Road_Jack,,2,5,4,,,
 Hit_the_Road_Jack,,3,9,4,,,
 Hit_the_Road_Jack,,4,13,4,,,
-Hit_the_Road_Jack,,5,17,4,,,
+Hit_the_Road_Jack,Set #2 (& Set 3),5,17,4,2,,
 Hit_the_Road_Jack,,6,21,4,,,
 Hit_the_Road_Jack,,7,25,4,,,
 Hit_the_Road_Jack,,8,29,4,,,
@@ -84,15 +84,15 @@ Hit_the_Road_Jack,,29,113,4,,,mm 22
 Hit_the_Road_Jack,,30,117,4,,,mm 23
 Hit_the_Road_Jack,,31,121,4,,,mm 24
 Hit_the_Road_Jack,,32,125,4,,,mm 25
-Hit_the_Road_Jack,,33,129,4,,,mm 26
+Hit_the_Road_Jack,Set #3 (3a),33,129,4,3,,mm 26
 Hit_the_Road_Jack,,34,133,4,,,mm 27
 Hit_the_Road_Jack,,35,137,4,,,mm 28
 Hit_the_Road_Jack,,36,141,4,,,mm 29
-Hit_the_Road_Jack,,37,145,4,,,mm 30
+Hit_the_Road_Jack,Set #4,37,145,4,4,,mm 30
 Hit_the_Road_Jack,,38,149,4,,,mm 31
 Hit_the_Road_Jack,,39,153,4,,,mm 32
 Hit_the_Road_Jack,,40,157,4,,,mm 33
-Hit_the_Road_Jack,,41,161,4,,,mm 34
+Hit_the_Road_Jack,Set #5 & 6,41,161,4,5,,mm 34
 Hit_the_Road_Jack,,42,165,4,,,mm 35
 Hit_the_Road_Jack,,43,169,4,,,mm 36
 Hit_the_Road_Jack,,44,173,4,,,mm 37
